@@ -19,21 +19,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
+      - name: Prepare output (flat prebuilt — copy everything, drop noise)
+        run: |
+          mkdir -p output
+          cp -r * output/ 2>/dev/null || true
+          # drop source-only files that don't belong on Pages
+          find output -maxdepth 2 -name '*.tsx' -delete
+          find output -maxdepth 2 -name '*.ts' ! -name '*.d.ts' -delete
+          find output -maxdepth 2 -name 'package*.json' -delete
+          find output -maxdepth 2 -name 'tsconfig*.json' -delete
+          find output -maxdepth 2 -name 'vite.config.*' -delete
+          find output -maxdepth 2 -name 'eslint.config.*' -delete
+          rm -rf output/node_modules output/.github
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-
-      - name: Prepare output
-        run: mv dist output
-
+      - name: Rewrite absolute /assets/ refs to root (no assets subdir on this bundle)
+        run: |
+          find output -maxdepth 2 -name '*.html' -exec sed -i \
+            -e 's|"/assets/|"./|g' \
+            -e "s|'/assets/|'./|g" {} +
+          # vite __vitePreload helper: function(x){return"/"+x}
+          # the chunk arg x is the chunk filename (no path prefix when files are flat).
+          find output -name '*.js' -exec sed -i -E \
+            's|function\(([a-z_$])\)\{return"/"\+\1\}|function(\1){return"./"+\1}|g' {} +
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
